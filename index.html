@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pink Bunny Inventory &amp; Cashier</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2c2626">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <div class="brand">
+    <div class="brand-mark">PB</div>
+    <h1>Pink Bunny Inventory</h1>
+    <p>Manager &amp; Cashier &middot; Offline</p>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-left">
+      <span class="dot" id="status-dot"></span>
+      <div>
+        <div class="status-text" id="status-text">Offline</div>
+        <div class="status-sub" id="status-sub">Last synced: never</div>
+      </div>
+    </div>
+    <button class="sync-btn" id="sync-btn">Sync now <span class="pending-pill" id="pending-pill" style="display:none">0</span></button>
+  </div>
+
+  <div class="settings-toggle" id="settings-toggle">Settings ▾</div>
+  <div class="card" id="settings-card" style="display:none">
+    <h2>Settings</h2>
+    <div class="field">
+      <label>Apps Script Web App URL</label>
+      <input type="text" id="webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
+      <div class="hint">Paste the deployment URL from your Google Apps Script project. Needed only to sync — the app works fully offline without it.</div>
+    </div>
+    <button class="btn outline" id="save-url-btn">Save URL</button>
+    <div class="msg" id="settings-msg"></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-page="inventory">Inventory</button>
+    <button class="tab-btn" data-page="cashier">Cashier</button>
+    <button class="tab-btn" data-page="reports">Reports</button>
+  </div>
+
+  <!-- ============ INVENTORY ============ -->
+  <div class="page active" id="page-inventory">
+
+    <div class="card">
+      <h2>Search product</h2>
+      <div class="field"><label>Product</label>
+        <select id="search-code"><option value="">Select a product…</option></select>
+      </div>
+      <div class="msg" id="search-msg"></div>
+      <div class="result-card" id="search-result" style="display:none"></div>
+    </div>
+
+    <div class="card">
+      <h2>Add product</h2>
+      <div class="field"><label>Code</label>
+        <div class="code-row"><input type="text" id="add-code"><button class="icon-btn" id="regen-code" title="Generate new code">&#8635;</button></div>
+      </div>
+      <div class="field"><label>Name</label><input type="text" id="add-name" placeholder="Product name"></div>
+      <div class="row-2">
+        <div class="field"><label>Color</label><input type="text" id="add-color"></div>
+        <div class="field"><label>Category</label><input type="text" id="add-category"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Quantity</label><input type="number" id="add-quantity" min="0" value="0"></div>
+        <div class="field"><label>Purchase date</label><input type="date" id="add-purchase-date"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Price per unit</label><input type="number" id="add-price-per-unit" min="0" step="0.01"></div>
+        <div class="field"><label>Price (after discount)</label><input type="number" id="add-price" min="0" step="0.01" placeholder="Same as unit price"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Cost per unit (USD)</label><input type="number" id="add-cost-usd" min="0" step="0.01"></div>
+        <div class="field"><label>Charge per unit (USD)</label><input type="number" id="add-charge-usd" min="0" step="0.01"></div>
+      </div>
+      <button class="btn" id="add-btn">Add product</button>
+      <div class="msg" id="add-msg"></div>
+    </div>
+
+  </div>
+
+  <!-- ============ CASHIER ============ -->
+  <div class="page" id="page-cashier">
+
+    <div class="card">
+      <h2>Pricing</h2>
+      <div class="field"><label>Charge customers</label>
+        <select id="price-mode">
+          <option value="price">Price (after discount)</option>
+          <option value="pricePerUnit">Price per unit</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Scan or select a product</h2>
+      <div class="field"><label>Product</label>
+        <select id="scan-code"><option value="">Select a product…</option></select>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Add as</label>
+          <select id="cart-type"><option value="sale">Sale</option><option value="deduction">Deduction</option></select>
+        </div>
+        <div class="field" id="ded-reason-field" style="display:none"><label>Reason</label>
+          <select id="ded-reason"><option value="Sponsor">Sponsor</option><option value="Gift">Gift</option><option value="Collaboration">Collaboration</option></select>
+        </div>
+      </div>
+      <button class="btn" id="add-to-cart-btn">Add to cart</button>
+      <div class="msg" id="scan-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Cart</h2>
+      <div id="cart-list"><div class="cart-empty">Cart is empty — select a product to add it.</div></div>
+      <div class="totals-row"><span class="t-label">Total</span><span class="t-value" id="cart-total">$0.00</span></div>
+      <div class="row-2" style="margin-top:14px">
+        <button class="btn outline" id="clear-cart">Clear</button>
+        <button class="btn green" id="checkout-btn">Checkout</button>
+      </div>
+      <div class="msg" id="checkout-msg"></div>
+    </div>
+
+    <div class="card" id="receipt-card" style="display:none">
+      <h2>Last sale</h2>
+      <div id="receipt-list"></div>
+      <button class="btn outline" id="download-receipt-btn" style="margin-top:14px">Download PDF receipt</button>
+      <div class="msg" id="download-receipt-msg"></div>
+      <div class="field" style="margin-top:14px"><label>WhatsApp number (with country code, optional)</label>
+        <input type="tel" id="whatsapp-phone" placeholder="e.g. 15551234567"></div>
+      <button class="btn" id="whatsapp-btn" style="background:#25D366">Send receipt via WhatsApp</button>
+      <div class="msg" id="whatsapp-msg"></div>
+    </div>
+
+  </div>
+
+  <!-- ============ REPORTS ============ -->
+  <div class="page" id="page-reports">
+
+    <div class="card">
+      <h2>Profit report</h2>
+      <div class="field hint" style="margin-bottom:12px">Calculated from sales stored on this device — works offline, and includes anything not yet synced.</div>
+      <div class="row-2">
+        <div class="field"><label>Start date</label><input type="date" id="report-start"></div>
+        <div class="field"><label>End date</label><input type="date" id="report-end"></div>
+      </div>
+      <div class="field"><label>Exchange rate (1 USD = ? Bs)</label><input type="number" id="report-rate" min="0" step="0.01"></div>
+      <button class="btn" id="generate-report-btn">Generate report</button>
+      <div class="msg" id="report-msg"></div>
+    </div>
+
+    <div class="card" id="report-result-card" style="display:none">
+      <h2>Summary</h2>
+      <div id="report-summary"></div>
+      <button class="btn outline" id="download-report-btn" style="margin-top:14px">Download PDF report</button>
+      <div class="msg" id="download-report-msg"></div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
