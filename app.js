@@ -224,47 +224,49 @@ function updateStatusUI() {
   });
 }
 
+/**
+* Loads a URL via a <script> tag instead of fetch(). Script-tag loading
+* isn't subject to the cross-origin restriction that blocks fetch() from
+* reading a response on a different domain — this is what lets the PWA
+* actually talk to the Apps Script deployment from GitHub Pages.
+*/
+function jsonp(baseUrl, params) {
+  return new Promise(function (resolve, reject) {
+    var cbName = 'pb_jsonp_' + uid();
+    var timeout = setTimeout(function () { cleanup(); reject(new Error('Request timed out.')); }, 20000);
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+    window[cbName] = function (data) { cleanup(); resolve(data); };
+    var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
+    var script = document.createElement('script');
+    script.src = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + qs + '&callback=' + cbName;
+    script.onerror = function () { cleanup(); reject(new Error('Could not reach the Web App URL. Double check it in Settings and that it\'s deployed with access set to "Anyone".')); };
+    document.head.appendChild(script);
+  });
+}
+
+var SYNC_CHUNK_SIZE = 15; // ops per request, keeps the URL a safe length
+
 function syncNow() {
   var syncMsgTarget = $('settings-msg');
   if (!navigator.onLine) { syncMsgTarget.textContent = 'No connection right now — will sync once you\'re back online.'; syncMsgTarget.className = 'msg info'; return Promise.resolve(); }
   return getMeta('webAppUrl').then(function (url) {
     if (!url) { syncMsgTarget.textContent = 'Add your Apps Script Web App URL in Settings first.'; syncMsgTarget.className = 'msg error'; return; }
+    url = url.trim();
     return idbAll('ops').then(function (ops) {
       if (!ops.length) {
         return getAllProductsRemote(url).then(function (data) {
+          if (!data.ok) throw new Error(data.error || 'Could not load products.');
           return replaceAllProducts(data.products)
             .then(function () { if (data.exchangeRate) return setMeta('exchangeRate', data.exchangeRate); })
             .then(function () { return setMeta('lastSync', new Date().toISOString()); });
         });
       }
       $('sync-btn').disabled = true;
-      syncMsgTarget.textContent = 'Syncing ' + ops.length + ' change(s)…'; syncMsgTarget.className = 'msg info';
-      var payload = { ops: ops.map(function (o) { return { clientOpId: o.id, type: o.type, payload: o.payload }; }) };
-      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          if (!data.ok) throw new Error(data.error || 'Sync failed.');
-          var byId = {};
-          data.results.forEach(function (r) { byId[r.clientOpId] = r; });
-          var writes = ops.map(function (op) {
-            var r = byId[op.id];
-            if (r && r.ok) return idbDelete('ops', op.id);
-            op.error = r ? r.error : 'No response from server.';
-            return idbPut('ops', op);
-          });
-          return Promise.all(writes).then(function () { return replaceAllProducts(data.products); })
-            .then(function () { if (data.exchangeRate) return setMeta('exchangeRate', data.exchangeRate); })
-            .then(function () { return setMeta('lastSync', new Date().toISOString()); })
-            .then(function () {
-              var failed = data.results.filter(function (r) { return !r.ok; });
-              if (failed.length) {
-                syncMsgTarget.textContent = failed.length + ' change(s) could not sync: ' + failed.map(function (f) { return f.error; }).join('; ');
-                syncMsgTarget.className = 'msg error';
-              } else {
-                syncMsgTarget.textContent = 'Synced successfully.'; syncMsgTarget.className = 'msg success';
-              }
-            });
-        });
+      return syncOpsInChunks(url, ops, syncMsgTarget);
     });
   }).catch(function (err) {
     syncMsgTarget.textContent = 'Sync failed: ' + (err.message || err); syncMsgTarget.className = 'msg error';
@@ -275,10 +277,52 @@ function syncNow() {
   });
 }
 
+function syncOpsInChunks(url, ops, syncMsgTarget) {
+  var chunks = [];
+  for (var i = 0; i < ops.length; i += SYNC_CHUNK_SIZE) chunks.push(ops.slice(i, i + SYNC_CHUNK_SIZE));
+  var allFailed = [];
+  var latestData = null;
+
+  function runChunk(idx) {
+    if (idx >= chunks.length) return Promise.resolve();
+    var chunk = chunks[idx];
+    syncMsgTarget.textContent = 'Syncing ' + (idx * SYNC_CHUNK_SIZE + chunk.length) + ' of ' + ops.length + ' change(s)…';
+    syncMsgTarget.className = 'msg info';
+    var payload = { ops: chunk.map(function (o) { return { clientOpId: o.id, type: o.type, payload: o.payload }; }) };
+    return jsonp(url, { api: 'sync', payload: JSON.stringify(payload) }).then(function (data) {
+      if (!data.ok) throw new Error(data.error || 'Sync failed.');
+      latestData = data;
+      var byId = {};
+      data.results.forEach(function (r) { byId[r.clientOpId] = r; });
+      var writes = chunk.map(function (op) {
+        var r = byId[op.id];
+        if (r && r.ok) return idbDelete('ops', op.id);
+        op.error = r ? r.error : 'No response from server.';
+        allFailed.push(op.error);
+        return idbPut('ops', op);
+      });
+      return Promise.all(writes).then(function () { return runChunk(idx + 1); });
+    });
+  }
+
+  return runChunk(0).then(function () {
+    if (!latestData) return;
+    return replaceAllProducts(latestData.products)
+      .then(function () { if (latestData.exchangeRate) return setMeta('exchangeRate', latestData.exchangeRate); })
+      .then(function () { return setMeta('lastSync', new Date().toISOString()); })
+      .then(function () {
+        if (allFailed.length) {
+          syncMsgTarget.textContent = allFailed.length + ' change(s) could not sync: ' + allFailed.join('; ');
+          syncMsgTarget.className = 'msg error';
+        } else {
+          syncMsgTarget.textContent = 'Synced successfully.'; syncMsgTarget.className = 'msg success';
+        }
+      });
+  });
+}
+
 function getAllProductsRemote(url) {
-  return fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'api=products')
-    .then(function (res) { return res.json(); })
-    .then(function (data) { if (!data.ok) throw new Error(data.error || 'Could not load products.'); return data; });
+  return jsonp(url, { api: 'products' });
 }
 
 function replaceAllProducts(products) {
