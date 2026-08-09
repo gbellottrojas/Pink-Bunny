@@ -60,16 +60,21 @@ input:focus,select:focus{outline:none;border-color:#eb9a8e}
 #qr-reader{border-radius:12px;overflow:hidden}
 .cam-close{margin-top:12px}
 .or-divider{text-align:center;font-size:11.5px;color:#948b86;margin:14px 0 10px;text-transform:uppercase;letter-spacing:.4px}
-.cart-item{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #ece3df}
+.cart-item{padding:11px 0;border-bottom:1px solid #ece3df}
 .cart-item:last-child{border-bottom:none}
+.ci-top{display:flex;align-items:flex-start;gap:10px}
 .ci-info{flex:1;min-width:0}
 .ci-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ci-code{font-size:11.5px;color:#6b6161}
+.ci-bottom{display:flex;align-items:center;gap:10px;margin-top:8px}
 .qty-stepper{display:flex;align-items:center;gap:8px}
 .qty-stepper button{width:26px;height:26px;border-radius:8px;border:1.5px solid #ece3df;background:#fff;font-size:15px;cursor:pointer;line-height:1}
 .qty-stepper span{min-width:18px;text-align:center;font-weight:600;font-size:14px}
-.ci-total{width:64px;text-align:right;font-weight:700;font-size:13.5px}
-.ci-remove{background:none;border:none;color:#c0483d;font-size:18px;cursor:pointer;padding:0 2px}
+.price-edit{flex:1;display:flex;align-items:center;gap:5px;min-width:0}
+.price-edit span{font-size:11.5px;color:#6b6161;flex-shrink:0}
+.price-edit input{padding:6px 8px;font-size:13px;border-radius:8px;min-width:0}
+.ci-total{width:64px;text-align:right;font-weight:700;font-size:13.5px;flex-shrink:0}
+.ci-remove{background:none;border:none;color:#c0483d;font-size:18px;cursor:pointer;padding:0 2px;flex-shrink:0}
 .cart-empty{text-align:center;color:#6b6161;font-size:13.5px;padding:22px 0}
 .totals-row{display:flex;justify-content:space-between;align-items:baseline;padding-top:12px;margin-top:6px;border-top:1.5px solid #ece3df}
 .t-label{font-size:13.5px;color:#6b6161;font-weight:600}
