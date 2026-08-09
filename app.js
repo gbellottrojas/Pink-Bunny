@@ -523,13 +523,13 @@ function committedQtyForCode(codeUpper) {
   }, 0);
 }
 
-$('add-to-cart-btn').addEventListener('click', function () {
-  var code = $('scan-code').value;
+/**
+* Adds one unit of a product to the cart, respecting the current
+* Sale/Deduction + reason selection. Used by both the barcode scanner and
+* the "pick from list" dropdown, so they always behave identically.
+*/
+function addProductToCart(product) {
   var msg = $('scan-msg');
-  msg.textContent = '';
-  if (!code) { msg.textContent = 'Select a product.'; msg.className = 'msg error'; return; }
-  var product = productCache[code.toUpperCase()];
-  if (!product) { msg.textContent = 'Product not found.'; msg.className = 'msg error'; return; }
   var type = $('cart-type').value;
   var reason = type === 'deduction' ? $('ded-reason').value : null;
   var codeUpper = product.code.toUpperCase();
@@ -542,7 +542,40 @@ $('add-to-cart-btn').addEventListener('click', function () {
   }
   if (!cart[key]) cart[key] = { product: product, quantity: 0, dedType: reason };
   cart[key].quantity += 1;
+  msg.textContent = 'Added "' + product.name + '".';
+  msg.className = 'msg success';
   renderCart();
+}
+
+function handleScan(code) {
+  if (!code) return;
+  var msg = $('scan-msg');
+  var product = productCache[code.trim().toUpperCase()];
+  if (!product) {
+    msg.textContent = 'No product found for code "' + code + '".';
+    msg.className = 'msg error';
+    return;
+  }
+  addProductToCart(product);
+}
+
+$('scan-input').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    handleScan(e.target.value.trim());
+    e.target.value = '';
+  }
+});
+
+$('add-to-cart-btn').addEventListener('click', function () {
+  var code = $('scan-code').value;
+  var msg = $('scan-msg');
+  msg.textContent = '';
+  if (!code) { msg.textContent = 'Select a product.'; msg.className = 'msg error'; return; }
+  var product = productCache[code.toUpperCase()];
+  if (!product) { msg.textContent = 'Product not found.'; msg.className = 'msg error'; return; }
+  addProductToCart(product);
+  $('scan-code').value = '';
 });
 
 function renderCart() {
@@ -656,46 +689,59 @@ function renderReceipt(result) {
 $('download-receipt-btn').addEventListener('click', function () {
   if (!lastSaleResult || !window.jspdf) return;
   var sale = lastSaleResult;
-  var doc = new window.jspdf.jsPDF({ unit: 'pt', format: [300, 440 + sale.lines.length * 16] });
-  var y = 40;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-  doc.text('Pink Bunny', 20, y); y += 18;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110, 100, 97);
-  doc.text('Sale ' + sale.saleId + ' - ' + sale.timestamp, 20, y); y += 20;
-  doc.setDrawColor(200, 190, 185); doc.line(20, y, 280, y); y += 14;
+  var doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
+  var left = 56, right = 539; // ~A4 content width with 56pt margins
+  var y = 70;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
+  doc.setTextColor(44, 38, 38);
+  doc.text('Pink Bunny', left, y); y += 22;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(110, 100, 97);
+  doc.text('Sale ' + sale.saleId + '  \u00b7  ' + sale.timestamp, left, y); y += 26;
+  doc.setDrawColor(200, 190, 185); doc.line(left, y, right, y); y += 22;
 
-  doc.setFontSize(9); doc.setTextColor(110, 100, 97);
-  doc.text('Item', 20, y); doc.text('Qty', 170, y); doc.text('Unit', 205, y); doc.text('Total', 250, y); y += 10;
-  doc.setDrawColor(230, 225, 220); doc.line(20, y, 280, y); y += 12;
+  var colQty = 360, colUnit = 430, colTotal = 500;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(110, 100, 97);
+  doc.text('ITEM', left, y); doc.text('QTY', colQty, y); doc.text('UNIT', colUnit, y); doc.text('TOTAL', colTotal, y); y += 8;
+  doc.setDrawColor(230, 225, 220); doc.line(left, y, right, y); y += 20;
 
-  doc.setTextColor(44, 38, 38); doc.setFontSize(9.5);
+  function newPageIfNeeded() {
+    if (y > 760) { doc.addPage(); y = 70; }
+  }
+
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(44, 38, 38); doc.setFontSize(11);
   var saleLines = sale.lines.filter(function (l) { return l.type !== 'Deduction'; });
   var dedLines = sale.lines.filter(function (l) { return l.type === 'Deduction'; });
   saleLines.forEach(function (l) {
-    doc.text(String(l.name || l.code).slice(0, 24), 20, y);
-    doc.text(String(l.quantity), 170, y);
-    doc.text(bs(l.pricePerUnit), 205, y);
-    doc.text(bs(l.lineTotal), 250, y);
-    y += 16;
+    newPageIfNeeded();
+    doc.text(String(l.name || l.code).slice(0, 46), left, y);
+    doc.text(String(l.quantity), colQty, y);
+    doc.text(bs(l.pricePerUnit), colUnit, y);
+    doc.text(bs(l.lineTotal), colTotal, y);
+    y += 22;
   });
   if (dedLines.length) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(110, 100, 97);
-    doc.text('Deductions', 20, y); y += 14;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(44, 38, 38);
+    newPageIfNeeded();
+    y += 6;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(110, 100, 97);
+    doc.text('DEDUCTIONS', left, y); y += 20;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(44, 38, 38);
     dedLines.forEach(function (l) {
-      doc.text((String(l.name || l.code).slice(0, 20)) + ' (' + l.reason + ')', 20, y);
-      doc.text(String(l.quantity), 170, y);
-      doc.text('-', 205, y);
-      doc.text(bs(0), 250, y);
-      y += 16;
+      newPageIfNeeded();
+      doc.text((String(l.name || l.code).slice(0, 36)) + ' (' + l.reason + ')', left, y);
+      doc.text(String(l.quantity), colQty, y);
+      doc.text('\u2014', colUnit, y);
+      doc.text(bs(0), colTotal, y);
+      y += 22;
     });
   }
 
-  doc.setDrawColor(44, 38, 38); doc.line(20, y, 280, y); y += 16;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-  doc.text('Total', 20, y); doc.text(bs(sale.total), 250, y); y += 24;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110, 100, 97);
-  doc.text('Thank you for your purchase!', 20, y);
+  newPageIfNeeded();
+  y += 6;
+  doc.setDrawColor(44, 38, 38); doc.line(left, y, right, y); y += 26;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+  doc.text('Total', left, y); doc.text(bs(sale.total), colTotal, y); y += 34;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(110, 100, 97);
+  doc.text('Thank you for your purchase!', left, y);
 
   doc.save('Receipt-' + sale.saleId + '.pdf');
   $('download-receipt-msg').textContent = 'PDF downloaded.'; $('download-receipt-msg').className = 'msg success';
@@ -841,37 +887,98 @@ $('download-report-btn').addEventListener('click', function () {
   var msg = $('download-report-msg');
   var report = lastReport;
   var t = report.totals;
-  var doc = new window.jspdf.jsPDF({ unit: 'pt', format: [320, 480 + report.lines.length * 16] });
-  var y = 40;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
-  doc.text('Pink Bunny \u2014 Profit Report', 20, y); y += 16;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110, 100, 97);
-  doc.text(report.startDate + ' to ' + report.endDate + '  \u00b7  Rate: 1 USD = ' + report.rate + ' Bs', 20, y); y += 22;
+  var doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
+  var left = 56, right = 539;
+  var y = 70;
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(44, 38, 38);
-  [['Revenue', t.revenue], ['Cost', t.cost], ['Charge', t.charge], ['Profit', t.profit]].forEach(function (pair) {
-    doc.text(pair[0] + ':', 20, y);
-    doc.text(bs(pair[1]), 120, y);
-    y += 15;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(44, 38, 38);
+  doc.text('Pink Bunny \u2014 Profit Report', left, y); y += 20;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(110, 100, 97);
+  doc.text(report.startDate + ' to ' + report.endDate + '  \u00b7  Rate: 1 USD = ' + report.rate + ' Bs', left, y); y += 30;
+
+  var boxW = (right - left - 24) / 4;
+  [['Revenue', t.revenue], ['Cost', t.cost], ['Charge', t.charge], ['Profit', t.profit]].forEach(function (pair, i) {
+    var bx = left + i * (boxW + 8);
+    doc.setDrawColor(230, 225, 220); doc.roundedRect(bx, y, boxW, 50, 6, 6);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(110, 100, 97);
+    doc.text(pair[0].toUpperCase(), bx + 10, y + 18);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(44, 38, 38);
+    doc.text(bs(pair[1]), bx + 10, y + 38);
   });
-  y += 8;
-  doc.setDrawColor(200, 190, 185); doc.line(20, y, 300, y); y += 14;
+  y += 74;
 
-  doc.setFontSize(8.5); doc.setTextColor(110, 100, 97);
-  doc.text('Date', 20, y); doc.text('Item', 90, y); doc.text('Qty', 190, y); doc.text('Rev', 215, y); doc.text('Profit', 260, y); y += 10;
-  doc.setDrawColor(230, 225, 220); doc.line(20, y, 300, y); y += 12;
+  if (Object.keys(t.byReason || {}).length) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(110, 100, 97);
+    var reasonText = Object.keys(t.byReason).map(function (r) { return r + ': ' + t.byReason[r] + ' item(s)'; }).join('   \u00b7   ');
+    doc.text(reasonText, left, y); y += 24;
+  }
 
-  doc.setFontSize(8); doc.setTextColor(44, 38, 38);
+  doc.setDrawColor(200, 190, 185); doc.line(left, y, right, y); y += 20;
+
+  var colQty = 300, colRev = 360, colCost = 430, colProfit = 500;
+  function drawTableHeader() {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(110, 100, 97);
+    doc.text('DATE / ITEM', left, y);
+    doc.text('QTY', colQty, y); doc.text('REVENUE', colRev, y); doc.text('COST+CHG', colCost, y); doc.text('PROFIT', colProfit, y);
+    y += 8;
+    doc.setDrawColor(230, 225, 220); doc.line(left, y, right, y); y += 18;
+  }
+  drawTableHeader();
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(44, 38, 38);
   report.lines.forEach(function (l) {
+    if (y > 760) { doc.addPage(); y = 70; drawTableHeader(); }
     var tag = l.type === 'Deduction' ? (' (' + l.reason + ')') : '';
-    doc.text(String(l.timestamp).slice(0, 10), 20, y);
-    doc.text((String(l.name || l.code) + tag).slice(0, 22), 90, y);
-    doc.text(String(l.quantity), 190, y);
-    doc.text(bs(l.lineTotal), 215, y);
-    doc.text(bs(l.profitBs), 260, y);
-    y += 14;
+    doc.setFontSize(8); doc.setTextColor(110, 100, 97);
+    doc.text(String(l.timestamp).slice(0, 16), left, y);
+    doc.setFontSize(9.5); doc.setTextColor(44, 38, 38);
+    doc.text((String(l.name || l.code) + tag).slice(0, 30), left, y + 12);
+    doc.text(String(l.quantity), colQty, y + 6);
+    doc.text(bs(l.lineTotal), colRev, y + 6);
+    doc.text(bs(l.costBs + l.chargeBs), colCost, y + 6);
+    doc.text(bs(l.profitBs), colProfit, y + 6);
+    y += 28;
   });
 
   doc.save('Profit-Report-' + report.startDate + '_to_' + report.endDate + '.pdf');
   msg.textContent = 'PDF downloaded.'; msg.className = 'msg success';
 });
+
+/* ---------------------------- Camera barcode scan ------------------------- */
+
+var html5QrCode = null;
+var cameraModal = $('camera-modal');
+
+$('open-camera').addEventListener('click', function () {
+  var scanMsg = $('scan-msg');
+  if (typeof Html5Qrcode === 'undefined') {
+    scanMsg.textContent = 'Camera scanner library isn\'t cached yet — connect once online, then it\'ll work offline too.';
+    scanMsg.className = 'msg error';
+    return;
+  }
+  cameraModal.classList.add('open');
+  html5QrCode = new Html5Qrcode('qr-reader');
+  Html5Qrcode.getCameras().then(function (cameras) {
+    var cameraId = cameras.length ? cameras[cameras.length - 1].id : null;
+    if (!cameraId) { scanMsg.textContent = 'No camera found.'; scanMsg.className = 'msg error'; closeCamera(); return; }
+    html5QrCode.start(
+      cameraId,
+      { fps: 10, qrbox: { width: 250, height: 140 } },
+      function (decodedText) { handleScan(decodedText); closeCamera(); }
+    ).catch(function () {
+      scanMsg.textContent = 'Could not start camera.'; scanMsg.className = 'msg error'; closeCamera();
+    });
+  }).catch(function () {
+    scanMsg.textContent = 'Camera access denied.'; scanMsg.className = 'msg error'; closeCamera();
+  });
+});
+
+function closeCamera() {
+  cameraModal.classList.remove('open');
+  if (html5QrCode) {
+    html5QrCode.stop().then(function () { html5QrCode.clear(); }).catch(function () {});
+    html5QrCode = null;
+  }
+}
+$('close-camera').addEventListener('click', closeCamera);
+
