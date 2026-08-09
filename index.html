@@ -95,18 +95,21 @@
       <h2>Pricing</h2>
       <div class="field"><label>Charge customers</label>
         <select id="price-mode">
-          <option value="price">Price (after discount)</option>
           <option value="pricePerUnit">Price per unit</option>
+          <option value="price">Price (after discount)</option>
         </select>
       </div>
     </div>
 
     <div class="card">
-      <h2>Scan or select a product</h2>
-      <div class="field"><label>Product</label>
-        <select id="scan-code"><option value="">Select a product…</option></select>
+      <h2>Scan a product</h2>
+      <div class="scan-input-wrap">
+        <input type="text" id="scan-input" placeholder="Scan barcode or type code, then Enter" autocomplete="off">
+        <button class="cam-btn" id="open-camera" title="Scan with camera">&#128247;</button>
       </div>
-      <div class="row-2">
+      <div class="or-divider">or pick from list</div>
+      <select id="scan-code"><option value="">Select a product…</option></select>
+      <div class="row-2" style="margin-top:13px">
         <div class="field"><label>Add as</label>
           <select id="cart-type"><option value="sale">Sale</option><option value="deduction">Deduction</option></select>
         </div>
@@ -168,6 +171,15 @@
 
 </div>
 
+<div id="camera-modal">
+  <div class="cam-box">
+    <h3>Point the camera at a barcode</h3>
+    <div id="qr-reader"></div>
+    <button class="btn outline cam-close" id="close-camera">Cancel</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="app.js"></script>
 </body>
