@@ -17,7 +17,6 @@ var productCache = {};   // code(upper) -> product
 var cart = {};           // cartKey -> {product, quantity, dedType}
 var currentProductCode = null;
 var lastSaleResult = null;
-var lastReportParams = null;
 
 function $(id) { return document.getElementById(id); }
 function escapeHtml(s) {
@@ -717,6 +716,8 @@ $('whatsapp-btn').addEventListener('click', function () {
 
 /* -------------------------------- Reports: profit ---------------------------- */
 
+var lastReport = null;
+
 $('generate-report-btn').addEventListener('click', function () {
   var start = $('report-start').value; var end = $('report-end').value;
   var rate = Number($('report-rate').value);
@@ -726,19 +727,51 @@ $('generate-report-btn').addEventListener('click', function () {
   if (!rate || rate <= 0) { msg.textContent = 'Enter a valid exchange rate.'; msg.className = 'msg error'; return; }
   setMeta('exchangeRate', rate);
   msg.textContent = 'Calculating…'; msg.className = 'msg info';
-  buildLocalProfitReport(start, end, rate).then(function (report) {
+  getProfitReport(start, end, rate).then(function (result) {
     msg.textContent = '';
-    lastReportParams = { start: start, end: end, rate: rate };
-    renderReportSummary(report);
+    lastReport = result.report;
+    renderReportSummary(result.report, result.source);
   }).catch(function (err) {
     msg.textContent = err.message || 'Could not build report.'; msg.className = 'msg error';
   });
 });
 
 /**
+* Prefers the authoritative report from your Google Sheet (covers every
+* device that's ever synced) whenever there's a connection and a Web App
+* URL configured. Only falls back to this device's own local sales log —
+* which won't include sales made on other devices — when offline.
+*/
+function getProfitReport(start, end, rate) {
+  if (!navigator.onLine) {
+    return buildLocalProfitReport(start, end, rate).then(function (report) {
+      return { report: report, source: 'local' };
+    });
+  }
+  return getMeta('webAppUrl').then(function (url) {
+    if (!url) {
+      return buildLocalProfitReport(start, end, rate).then(function (report) {
+        return { report: report, source: 'local' };
+      });
+    }
+    return jsonp(url.trim(), { api: 'report', start: start, end: end, rate: rate }).then(function (data) {
+      if (!data.ok) throw new Error(data.error || 'Could not load report from your Sheet.');
+      return { report: data.report, source: 'server' };
+    }).catch(function () {
+      // Server unreachable for some reason — still give the person *something*.
+      return buildLocalProfitReport(start, end, rate).then(function (report) {
+        return { report: report, source: 'local' };
+      });
+    });
+  });
+}
+
+/**
 * Reads the local "sales" store (every checkout made on this device,
 * synced or not) for the date range and computes Profit = Price Sold -
 * (Cost + Charge) x rate, same formula as the backend's profit report.
+* Only used offline, or as a fallback if the server can't be reached —
+* it won't include sales made on other devices.
 */
 function buildLocalProfitReport(startDate, endDate, rate) {
   var start = new Date(startDate + 'T00:00:00');
@@ -781,12 +814,15 @@ function buildLocalProfitReport(startDate, endDate, rate) {
   });
 }
 
-function renderReportSummary(report) {
+function renderReportSummary(report, source) {
   var t = report.totals;
   var reasonRows = Object.keys(t.byReason || {}).map(function (r) {
     return '<div><span>' + escapeHtml(r) + '</span>' + t.byReason[r] + ' item(s)</div>';
   }).join('');
-  $('report-summary').innerHTML =
+  var sourceNote = source === 'server'
+    ? '<div class="hint" style="margin-bottom:10px;color:#3f9e6f">&#10003; From your Google Sheet — includes every synced device.</div>'
+    : '<div class="hint" style="margin-bottom:10px;color:#d68b2c">&#9888; This device only (offline) — sales from other devices aren\'t included until you sync and re-run this while online.</div>';
+  $('report-summary').innerHTML = sourceNote +
     '<div class="result-grid">' +
     '<div><span>Revenue</span>' + bs(t.revenue) + '</div>' +
     '<div><span>Cost</span>' + bs(t.cost) + '</div>' +
@@ -801,46 +837,41 @@ function renderReportSummary(report) {
 }
 
 $('download-report-btn').addEventListener('click', function () {
-  if (!lastReportParams || !window.jspdf) return;
-  var msg = $('download-report-msg'); var btn = $('download-report-btn');
-  btn.disabled = true; msg.textContent = 'Generating PDF…'; msg.className = 'msg info';
-  buildLocalProfitReport(lastReportParams.start, lastReportParams.end, lastReportParams.rate).then(function (report) {
-    btn.disabled = false; msg.textContent = '';
-    var t = report.totals;
-    var doc = new window.jspdf.jsPDF({ unit: 'pt', format: [320, 480 + report.lines.length * 16] });
-    var y = 40;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
-    doc.text('Pink Bunny \u2014 Profit Report', 20, y); y += 16;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110, 100, 97);
-    doc.text(report.startDate + ' to ' + report.endDate + '  \u00b7  Rate: 1 USD = ' + report.rate + ' Bs', 20, y); y += 22;
+  if (!lastReport || !window.jspdf) return;
+  var msg = $('download-report-msg');
+  var report = lastReport;
+  var t = report.totals;
+  var doc = new window.jspdf.jsPDF({ unit: 'pt', format: [320, 480 + report.lines.length * 16] });
+  var y = 40;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+  doc.text('Pink Bunny \u2014 Profit Report', 20, y); y += 16;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110, 100, 97);
+  doc.text(report.startDate + ' to ' + report.endDate + '  \u00b7  Rate: 1 USD = ' + report.rate + ' Bs', 20, y); y += 22;
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(44, 38, 38);
-    [['Revenue', t.revenue], ['Cost', t.cost], ['Charge', t.charge], ['Profit', t.profit]].forEach(function (pair) {
-      doc.text(pair[0] + ':', 20, y);
-      doc.text(bs(pair[1]), 120, y);
-      y += 15;
-    });
-    y += 8;
-    doc.setDrawColor(200, 190, 185); doc.line(20, y, 300, y); y += 14;
-
-    doc.setFontSize(8.5); doc.setTextColor(110, 100, 97);
-    doc.text('Date', 20, y); doc.text('Item', 90, y); doc.text('Qty', 190, y); doc.text('Rev', 215, y); doc.text('Profit', 260, y); y += 10;
-    doc.setDrawColor(230, 225, 220); doc.line(20, y, 300, y); y += 12;
-
-    doc.setFontSize(8); doc.setTextColor(44, 38, 38);
-    report.lines.forEach(function (l) {
-      var tag = l.type === 'Deduction' ? (' (' + l.reason + ')') : '';
-      doc.text(String(l.timestamp).slice(0, 10), 20, y);
-      doc.text((String(l.name || l.code) + tag).slice(0, 22), 90, y);
-      doc.text(String(l.quantity), 190, y);
-      doc.text(bs(l.lineTotal), 215, y);
-      doc.text(bs(l.profitBs), 260, y);
-      y += 14;
-    });
-
-    doc.save('Profit-Report-' + report.startDate + '_to_' + report.endDate + '.pdf');
-  }).catch(function (err) {
-    btn.disabled = false;
-    msg.textContent = err.message || 'Could not generate PDF.'; msg.className = 'msg error';
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(44, 38, 38);
+  [['Revenue', t.revenue], ['Cost', t.cost], ['Charge', t.charge], ['Profit', t.profit]].forEach(function (pair) {
+    doc.text(pair[0] + ':', 20, y);
+    doc.text(bs(pair[1]), 120, y);
+    y += 15;
   });
+  y += 8;
+  doc.setDrawColor(200, 190, 185); doc.line(20, y, 300, y); y += 14;
+
+  doc.setFontSize(8.5); doc.setTextColor(110, 100, 97);
+  doc.text('Date', 20, y); doc.text('Item', 90, y); doc.text('Qty', 190, y); doc.text('Rev', 215, y); doc.text('Profit', 260, y); y += 10;
+  doc.setDrawColor(230, 225, 220); doc.line(20, y, 300, y); y += 12;
+
+  doc.setFontSize(8); doc.setTextColor(44, 38, 38);
+  report.lines.forEach(function (l) {
+    var tag = l.type === 'Deduction' ? (' (' + l.reason + ')') : '';
+    doc.text(String(l.timestamp).slice(0, 10), 20, y);
+    doc.text((String(l.name || l.code) + tag).slice(0, 22), 90, y);
+    doc.text(String(l.quantity), 190, y);
+    doc.text(bs(l.lineTotal), 215, y);
+    doc.text(bs(l.profitBs), 260, y);
+    y += 14;
+  });
+
+  doc.save('Profit-Report-' + report.startDate + '_to_' + report.endDate + '.pdf');
+  msg.textContent = 'PDF downloaded.'; msg.className = 'msg success';
 });
