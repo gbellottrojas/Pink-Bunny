@@ -146,7 +146,7 @@ function checkoutCartLocal(lines, priceType) {
     var p = productCache[String(item.code).toUpperCase()];
     if (!p) throw new Error('Product "' + item.code + '" not found.');
     if (item.quantity <= 0) throw new Error('Invalid quantity for "' + p.name + '".');
-    resolved.push({ product: p, quantity: item.quantity, dedType: item.dedType || null });
+    resolved.push({ product: p, quantity: item.quantity, dedType: item.dedType || null, unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null });
   }
   var totalsByCode = {};
   resolved.forEach(function (l) {
@@ -169,7 +169,7 @@ function checkoutCartLocal(lines, priceType) {
 
   resolved.forEach(function (line) {
     var p = line.product;
-    var unitPrice = line.dedType ? 0 : (usePricePerUnit ? p.pricePerUnit : p.price);
+    var unitPrice = line.dedType ? 0 : (line.unitPrice != null ? line.unitPrice : (usePricePerUnit ? p.pricePerUnit : p.price));
     var lineTotal = line.quantity * unitPrice;
     total += lineTotal;
     p.quantity -= line.quantity;
@@ -187,7 +187,7 @@ function checkoutCartLocal(lines, priceType) {
     });
   });
 
-  var cartPayload = resolved.map(function (l) { return { code: l.product.code, quantity: l.quantity, dedType: l.dedType }; });
+  var cartPayload = resolved.map(function (l) { return { code: l.product.code, quantity: l.quantity, dedType: l.dedType, unitPrice: l.unitPrice }; });
   return Promise.all(puts)
     .then(function () { return Promise.all(salesRecords.map(function (r) { return idbPut('sales', r); })); })
     .then(function () { return addPendingOp('sale', { cart: cartPayload, priceType: priceType }); })
@@ -578,6 +578,15 @@ $('add-to-cart-btn').addEventListener('click', function () {
   $('scan-code').value = '';
 });
 
+function setLinePrice(key, value) {
+  var entry = cart[key];
+  if (!entry) return;
+  var v = value === '' ? null : Number(value);
+  if (v != null && (isNaN(v) || v < 0)) v = null;
+  entry.overridePrice = v;
+  renderCart();
+}
+
 function renderCart() {
   var list = $('cart-list');
   var keys = Object.keys(cart);
@@ -589,19 +598,28 @@ function renderCart() {
   var total = 0;
   list.innerHTML = keys.map(function (key) {
     var entry = cart[key];
-    var lineTotal = entry.dedType ? 0 : entry.quantity * getUnitPrice(entry.product);
+    var unitPrice = entry.dedType ? 0 : (entry.overridePrice != null ? entry.overridePrice : getUnitPrice(entry.product));
+    var lineTotal = entry.quantity * unitPrice;
     total += lineTotal;
     var tag = entry.dedType ? ('<span class="badge tag">' + escapeHtml(entry.dedType) + '</span>') : '';
+    var priceControl = entry.dedType
+      ? '<div class="price-edit"><span>Bs</span><span>0.00 (deduction)</span></div>'
+      : '<div class="price-edit"><span>Bs</span><input type="number" min="0" step="0.01" value="' + unitPrice.toFixed(2) + '" onchange="setLinePrice(\'' + key + '\', this.value)"></div>';
     return '<div class="cart-item">' +
+      '<div class="ci-top">' +
       '<div class="ci-info"><div class="ci-name">' + escapeHtml(entry.product.name) + tag + '</div>' +
       '<div class="ci-code">' + escapeHtml(entry.product.code) + '</div></div>' +
+      '<button class="ci-remove" onclick="removeFromCart(\'' + key + '\')">&times;</button>' +
+      '</div>' +
+      '<div class="ci-bottom">' +
       '<div class="qty-stepper">' +
       '<button onclick="changeQty(\'' + key + '\',-1)">&minus;</button>' +
       '<span>' + entry.quantity + '</span>' +
       '<button onclick="changeQty(\'' + key + '\',1)">+</button>' +
       '</div>' +
+      priceControl +
       '<div class="ci-total">' + bs(lineTotal) + '</div>' +
-      '<button class="ci-remove" onclick="removeFromCart(\'' + key + '\')">&times;</button>' +
+      '</div>' +
       '</div>';
   }).join('');
   $('cart-total').textContent = bs(total);
@@ -635,7 +653,7 @@ $('checkout-btn').addEventListener('click', function () {
   var keys = Object.keys(cart);
   var checkoutMsg = $('checkout-msg');
   if (!keys.length) { checkoutMsg.textContent = 'Cart is empty.'; checkoutMsg.className = 'msg error'; return; }
-  var lines = keys.map(function (key) { return { code: cart[key].product.code, quantity: cart[key].quantity, dedType: cart[key].dedType || null }; });
+  var lines = keys.map(function (key) { return { code: cart[key].product.code, quantity: cart[key].quantity, dedType: cart[key].dedType || null, unitPrice: cart[key].dedType ? null : cart[key].overridePrice }; });
   var priceType = $('price-mode').value;
   var btn = $('checkout-btn'); btn.disabled = true;
   checkoutMsg.textContent = 'Processing…'; checkoutMsg.className = 'msg info';
@@ -758,6 +776,16 @@ $('whatsapp-btn').addEventListener('click', function () {
     '(Download the PDF receipt and attach it here in WhatsApp.)';
   var url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
   window.open(url, '_blank');
+
+  if (phone && sale.saleId.indexOf('OFFLINE-') !== 0) {
+    getMeta('webAppUrl').then(function (webAppUrl) {
+      if (!webAppUrl) return;
+      return jsonp(webAppUrl.trim(), { api: 'recordWhatsapp', saleId: sale.saleId, phone: phone });
+    }).catch(function () { /* best-effort — WhatsApp already opened either way */ });
+  } else if (phone && sale.saleId.indexOf('OFFLINE-') === 0) {
+    $('whatsapp-msg').textContent = 'Sent — number will be recorded in Sales once this sale finishes syncing.';
+    $('whatsapp-msg').className = 'msg info';
+  }
 });
 
 /* -------------------------------- Reports: profit ---------------------------- */
