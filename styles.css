@@ -50,6 +50,16 @@ input:focus,select:focus{outline:none;border-color:#eb9a8e}
 .badge.low{background:#fbeee0;color:#d68b2c}
 .badge.pending{background:#e6edfd;color:#4f7df3}
 .badge.tag{background:#e6edfd;color:#4f7df3;font-size:10px;padding:2px 7px;margin-top:0;margin-left:6px;vertical-align:middle}
+.scan-input-wrap{position:relative}
+.scan-input-wrap input{padding-right:46px}
+.cam-btn{position:absolute;right:6px;top:6px;bottom:6px;width:36px;border:none;border-radius:8px;background:#eb9a8e;color:#fff;font-size:16px;cursor:pointer}
+#camera-modal{display:none;position:fixed;inset:0;background:rgba(20,15,12,.72);z-index:50;align-items:center;justify-content:center}
+#camera-modal.open{display:flex}
+.cam-box{background:#fff;border-radius:18px;padding:16px;width:92%;max-width:420px}
+.cam-box h3{margin:0 0 10px;font-size:15px}
+#qr-reader{border-radius:12px;overflow:hidden}
+.cam-close{margin-top:12px}
+.or-divider{text-align:center;font-size:11.5px;color:#948b86;margin:14px 0 10px;text-transform:uppercase;letter-spacing:.4px}
 .cart-item{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #ece3df}
 .cart-item:last-child{border-bottom:none}
 .ci-info{flex:1;min-width:0}
