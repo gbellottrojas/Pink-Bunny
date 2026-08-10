@@ -272,7 +272,7 @@ function syncNow() {
   }).finally(function () {
     $('sync-btn').disabled = !navigator.onLine;
     updateStatusUI();
-    populateSearchOptions(); populateScanOptions();
+    populateSearchOptions();
   });
 }
 
@@ -351,7 +351,6 @@ openDb().then(function (database) {
   if (r[1]) $('webapp-url').value = r[1];
   if (r[2]) $('report-rate').value = r[2];
   populateSearchOptions();
-  populateScanOptions();
   updateStatusUI();
   if (navigator.onLine) syncNow();
 });
@@ -407,16 +406,6 @@ function populateSearchOptions() {
   if (keep && productCache[keep]) sel.value = keep;
 }
 
-function populateScanOptions() {
-  var sel = $('scan-code');
-  var keep = sel.value;
-  sel.innerHTML = '<option value="">Select a product…</option>' + sortedCodes().map(function (code) {
-    var p = productCache[code];
-    return '<option value="' + escapeHtml(p.code) + '">' + escapeHtml(p.name) + ' — ' + escapeHtml(p.code) + ' (qty ' + p.quantity + ')</option>';
-  }).join('');
-  if (keep && productCache[keep]) sel.value = keep;
-}
-
 function renderSearchResult(product) {
   var result = $('search-result');
   currentProductCode = product.code;
@@ -460,7 +449,7 @@ function doUpdateQuantity() {
   if (!currentProductCode) return;
   try {
     updateQuantityLocal(currentProductCode, qty).then(function (product) {
-      populateSearchOptions(); populateScanOptions();
+      populateSearchOptions();
       $('search-code').value = product.code;
       renderSearchResult(product);
       $('update-quantity-msg').textContent = 'Quantity updated to ' + product.quantity + ' (saved offline).';
@@ -500,7 +489,7 @@ $('add-btn').addEventListener('click', function () {
       ['add-name', 'add-color', 'add-category', 'add-purchase-date', 'add-price-per-unit', 'add-price', 'add-cost-usd', 'add-charge-usd'].forEach(function (id) { $(id).value = ''; });
       $('add-quantity').value = 0;
       $('add-code').value = '';
-      populateSearchOptions(); populateScanOptions();
+      populateSearchOptions();
       updateStatusUI();
       if (navigator.onLine) syncNow();
     });
@@ -565,17 +554,6 @@ $('scan-input').addEventListener('keydown', function (e) {
     handleScan(e.target.value.trim());
     e.target.value = '';
   }
-});
-
-$('add-to-cart-btn').addEventListener('click', function () {
-  var code = $('scan-code').value;
-  var msg = $('scan-msg');
-  msg.textContent = '';
-  if (!code) { msg.textContent = 'Select a product.'; msg.className = 'msg error'; return; }
-  var product = productCache[code.toUpperCase()];
-  if (!product) { msg.textContent = 'Product not found.'; msg.className = 'msg error'; return; }
-  addProductToCart(product);
-  $('scan-code').value = '';
 });
 
 function setLinePrice(key, value) {
@@ -666,7 +644,7 @@ $('checkout-btn').addEventListener('click', function () {
       renderCart();
       lastSaleResult = result;
       renderReceipt(result);
-      populateSearchOptions(); populateScanOptions();
+      populateSearchOptions();
       updateStatusUI();
       if (navigator.onLine) syncNow();
     }).catch(function (err) {
@@ -704,9 +682,7 @@ function renderReceipt(result) {
   $('whatsapp-phone').value = '';
 }
 
-$('download-receipt-btn').addEventListener('click', function () {
-  if (!lastSaleResult || !window.jspdf) return;
-  var sale = lastSaleResult;
+function buildReceiptPdf(sale) {
   var doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
   var left = 56, right = 539; // ~A4 content width with 56pt margins
   var y = 70;
@@ -761,7 +737,13 @@ $('download-receipt-btn').addEventListener('click', function () {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(110, 100, 97);
   doc.text('Thank you for your purchase!', left, y);
 
-  doc.save('Receipt-' + sale.saleId + '.pdf');
+  return doc;
+}
+
+$('download-receipt-btn').addEventListener('click', function () {
+  if (!lastSaleResult || !window.jspdf) return;
+  var sale = lastSaleResult;
+  buildReceiptPdf(sale).save('Receipt-' + sale.saleId + '.pdf');
   $('download-receipt-msg').textContent = 'PDF downloaded.'; $('download-receipt-msg').className = 'msg success';
 });
 
@@ -770,12 +752,20 @@ $('whatsapp-btn').addEventListener('click', function () {
   if (!navigator.onLine) { $('whatsapp-msg').textContent = 'WhatsApp needs a connection to send.'; $('whatsapp-msg').className = 'msg error'; return; }
   var sale = lastSaleResult;
   var phone = $('whatsapp-phone').value.trim().replace(/[^0-9]/g, '');
+
+  if (window.jspdf) {
+    buildReceiptPdf(sale).save('Receipt-' + sale.saleId + '.pdf');
+  }
+
   var text = 'Hi! Here is your receipt from Pink Bunny.\n' +
     'Sale ' + sale.saleId + ' \u2014 Total ' + bs(sale.total) + '\n' +
     'Items: ' + sale.lines.map(function (l) { return l.quantity + 'x ' + (l.name || l.code) + (l.type === 'Deduction' ? ' (' + l.reason + ')' : ''); }).join(', ') + '\n' +
-    '(Download the PDF receipt and attach it here in WhatsApp.)';
+    '(Attach the PDF that just downloaded here in WhatsApp.)';
   var url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
   window.open(url, '_blank');
+
+  $('whatsapp-msg').textContent = 'PDF downloaded — attach it in the WhatsApp chat that just opened.';
+  $('whatsapp-msg').className = 'msg success';
 
   if (phone && sale.saleId.indexOf('OFFLINE-') !== 0) {
     getMeta('webAppUrl').then(function (webAppUrl) {
@@ -783,7 +773,7 @@ $('whatsapp-btn').addEventListener('click', function () {
       return jsonp(webAppUrl.trim(), { api: 'recordWhatsapp', saleId: sale.saleId, phone: phone });
     }).catch(function () { /* best-effort — WhatsApp already opened either way */ });
   } else if (phone && sale.saleId.indexOf('OFFLINE-') === 0) {
-    $('whatsapp-msg').textContent = 'Sent — number will be recorded in Sales once this sale finishes syncing.';
+    $('whatsapp-msg').textContent = 'PDF downloaded and sent — number will be recorded in Sales once this sale finishes syncing.';
     $('whatsapp-msg').className = 'msg info';
   }
 });
