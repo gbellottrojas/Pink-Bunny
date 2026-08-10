@@ -107,8 +107,6 @@
         <input type="text" id="scan-input" placeholder="Scan barcode or type code, then Enter" autocomplete="off">
         <button class="cam-btn" id="open-camera" title="Scan with camera">&#128247;</button>
       </div>
-      <div class="or-divider">or pick from list</div>
-      <select id="scan-code"><option value="">Select a product…</option></select>
       <div class="row-2" style="margin-top:13px">
         <div class="field"><label>Add as</label>
           <select id="cart-type"><option value="sale">Sale</option><option value="deduction">Deduction</option></select>
@@ -117,7 +115,6 @@
           <select id="ded-reason"><option value="Sponsor">Sponsor</option><option value="Gift">Gift</option><option value="Collaboration">Collaboration</option></select>
         </div>
       </div>
-      <button class="btn" id="add-to-cart-btn">Add to cart</button>
       <div class="msg" id="scan-msg"></div>
     </div>
 
@@ -139,7 +136,8 @@
       <div class="msg" id="download-receipt-msg"></div>
       <div class="field" style="margin-top:14px"><label>WhatsApp number (with country code, optional)</label>
         <input type="tel" id="whatsapp-phone" placeholder="e.g. 15551234567"></div>
-      <button class="btn" id="whatsapp-btn" style="background:#25D366">Send receipt via WhatsApp</button>
+      <button class="btn" id="whatsapp-btn" style="background:#25D366">Download PDF &amp; send via WhatsApp</button>
+      <div class="hint" style="margin-top:6px">This downloads the PDF and opens WhatsApp together — WhatsApp links can't auto-attach files, so you'll attach the (already-downloaded) PDF yourself once the chat opens.</div>
       <div class="msg" id="whatsapp-msg"></div>
     </div>
 
